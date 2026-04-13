@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: shuttle
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    command: >
+      sh -c "
+      osrm-extract -p /opt/car.lua /data/region.osm.pbf &&
+      osrm-partition /data/region.osrm &&
+      osrm-customize /data/region.osrm &&
+      osrm-routed --algorithm mld /data/region.osrm"
+    volumes:
+      - ./data/osm:/data
+    ports:
+      - "5000:5000"
+
+  optimizer:
+    build: ./services/optimizer
+    environment:
+      DB_URL: postgresql://postgres:secret@postgres:5432/shuttle
+      REDIS_URL: redis://redis:6379
+      OSRM_URL: http://osrm:5000
+    depends_on:
+      - postgres
+      - redis
+      - osrm
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
+  redis_data:
+
